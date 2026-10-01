@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+<title>Brick Climber: 150 Wall Ascents</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+  body, html { width: 100%; height: 100%; overflow: hidden; background: #87CEEB; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+  #canvas-container { width: 100%; height: 100%; position: absolute; left: 0; top: 0; z-index: 1; }
+  
+  /* Top HUD */
+  #top-hud {
+    position: absolute; top: 12px; left: 16px; right: 16px;
+    display: flex; justify-content: space-between; align-items: center;
+    z-index: 10; pointer-events: none;
+  }
+  .hud-card {
+    background: rgba(18, 22, 34, 0.85); backdrop-filter: blur(6px);
+    border: 2px solid rgba(255, 255, 255, 0.2); border-radius: 12px;
+    padding: 8px 16px; color: #fff; pointer-events: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 12px;
+  }
+  .title-text { font-size: 16px; font-weight: 800; color: #FFD700; letter-spacing: 0.5px; }
+  .stat-badge { font-size: 14px; font-weight: 700; background: #3b82f6; padding: 4px 10px; border-radius: 6px; }
+  
+  select, button {
+    background: #2563eb; color: #fff; border: none; outline: none;
+    font-size: 13px; font-weight: 700; padding: 6px 12px; border-radius: 8px; cursor: pointer;
+    box-shadow: 0 4px 0 #1d4ed8; transition: transform 0.08s ease;
+  }
+  button:active { transform: translateY(3px); box-shadow: 0 1px 0 #1d4ed8; }
+  select { cursor: pointer; background: #334155; box-shadow: 0 4px 0 #1e293b; }
+  
+  /* Split Banner / Win Banner */
+  #announcement {
+    position: absolute; top: 80px; left: 50%; transform: translateX(-50%);
+    background: rgba(16, 185, 129, 0.95); color: #fff; padding: 12px 28px;
+    border-radius: 30px; font-size: 20px; font-weight: 800;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4); z-index: 20; display: none;
+    pointer-events: none; text-align: center; border: 2px solid #a7f3d0;
+  }
+
+  /* Touch Controls (Virtual Joystick & Action Buttons) */
+  #touch-controls {
+    position: absolute; bottom: 16px; left: 16px; right: 16px;
+    display: flex; justify-content: space-between; align-items: flex-end;
+    z-index: 10; pointer-events: none;
+  }
+  #joystick-base {
+    width: 130px; height: 130px; background: rgba(255, 255, 255, 0.2);
+    border: 3px solid rgba(255, 255, 255, 0.4); border-radius: 50%;
+    position: relative; pointer-events: auto; touch-action: none;
+  }
+  #joystick-stick {
+    width: 54px; height: 54px; background: #FFD700;
+    border: 3px solid #b45309; border-radius: 50%;
+    position: absolute; top: 38px; left: 38px; pointer-events: none;
+    box-shadow: 0 6px 14px rgba(0,0,0,0.3);
+  }
+  .action-buttons {
+    display: flex; flex-direction: column; gap: 10px; pointer-events: auto;
+  }
+  .act-btn {
+    width: 76px; height: 76px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.6);
+    color: #fff; font-size: 13px; font-weight: 800; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.35); text-align: center; cursor: pointer;
+  }
+  .btn-jump { background: #10b981; }
+  .btn-grab { background: #f59e0b; }
+  .btn-reset { background: #ef4444; width: 56px; height: 56px; align-self: flex-end; font-size: 11px; }
+
+  /* 2-Player Key Guide Overlay */
+  #key-guide {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    background: rgba(15, 23, 42, 0.85); color: #cbd5e1; padding: 6px 16px;
+    border-radius: 20px; font-size: 12px; pointer-events: none; z-index: 9;
+    border: 1px solid rgba(255,255,255,0.15); text-align: center;
+  }
+  .hl { color: #38bdf8; font-weight: 700; }
+  .hl2 { color: #4ade80; font-weight: 700; }
+</style>
+<!-- Three.js CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+
+<div id="top-hud">
+  <div class="hud-card">
+    <div class="title-text">BRICK CLIMBER</div>
+    <div class="stat-badge" id="level-display">LVL 1 / 150</div>
+    <div class="stat-badge" style="background:#8b5cf6;" id="height-display">WALL: 2.5m</div>
+  </div>
+  
+  <div class="hud-card">
+    <button id="mode-toggle">Mode: 1 Player</button>
+    <select id="level-select"></select>
+  </div>
+</div>
+
+<div id="announcement">LEVEL CLEAR!</div>
+
+<div id="key-guide">
+  P1: <span class="hl">WASD</span> (Move) | <span class="hl">SPACE</span> (Jump) | <span class="hl">E</span> (Grab/Drop) &nbsp;&bull;&nbsp;
+  P2: <span class="hl2">Arrows</span> (Move) | <span class="hl2">ENTER</span> (Jump) | <span class="hl2">M</span> (Grab/Drop)
+</div>
+
+<div id="touch-controls">
+  <div id="joystick-base">
+    <div id="joystick-stick"></div>
+  </div>
+  <div class="action-buttons">
+    <button class="act-btn btn-reset" id="btn-reset">RESET</button>
+    <button class="act-btn btn-grab" id="btn-grab">GRAB / PLACE</button>
+    <button class="act-btn btn-jump" id="btn-jump">JUMP</button>
+  </div>
+</div>
+
+<script>
+/* ==================== AUDIO SYNTHESIS ==================== */
+const AudioContext = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+function initAudio() { if (!audioCtx) audioCtx = new AudioContext(); }
+function playBeep(freq, type = 'sine', duration = 0.15) {
+  try {
+    initAudio();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.18, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+  } catch(e){}
+}
+function soundJump() { playBeep(340, 'triangle', 0.2); }
+function soundGrab() { playBeep(480, 'sine', 0.12); }
+function soundPlace() { playBeep(180, 'square', 0.15); }
+function soundWin() {
+  [440, 554, 659, 880].forEach((f, idx) => {
+    setTimeout(() => playBeep(f, 'triangle', 0.3), idx * 100);
+  });
+}
+
+/* ==================== SCENE & RENDERER SETUP ==================== */
+const container = document.getElementById('canvas-container');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87CEEB);
+scene.fog = new THREE.FogExp2(0x87CEEB, 0.008);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 300);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+container.appendChild(renderer.domElement);
+
+// Lighting
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+scene.add(ambientLight);
+
+const sunLight = new THREE.DirectionalLight(0xfff5e6, 0.85);
+sunLight.position.set(25, 45, 20);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.width = 2048;
+sunLight.shadow.mapSize.height = 2048;
+sunLight.shadow.camera.near = 0.5;
+sunLight.shadow.camera.far = 150;
+sunLight.shadow.camera.left = -25;
+sunLight.shadow.camera.right = 25;
+sunLight.shadow.camera.top = 25;
+sunLight.shadow.camera.bottom = -25;
+scene.add(sunLight);
+
+/* ==================== ARENA ENVIRONMENT ==================== */
+// Stud Floor Pattern Canvas
+function createStudTexture(color = '#7a8288') {
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 128;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, 128, 128);
+  ctx.fillStyle = 'rgba(0,0,0,0.12)';
+  ctx.beginPath(); ctx.arc(64, 64, 32, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.18)';
+  ctx.beginPath(); ctx.arc(62, 62, 30, 0, Math.PI*2); ctx.fill();
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(16, 24);
+  return tex;
+}
+
+const groundGeo = new THREE.PlaneGeometry(36, 60);
+const groundMat = new THREE.MeshStandardMaterial({ map: createStudTexture(), roughness: 0.8 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Side Enclosure Walls
+const wallMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.9 });
+const leftWall = new THREE.Mesh(new THREE.BoxGeometry(1.5, 60, 60), wallMat);
+leftWall.position.set(-18.5, 25, 0);
+scene.add(leftWall);
+
+const rightWall = new THREE.Mesh(new THREE.BoxGeometry(1.5, 60, 60), wallMat);
+rightWall.position.set(18.5, 25, 0);
+scene.add(rightWall);
+
+const backWall = new THREE.Mesh(new THREE.BoxGeometry(36, 60, 1.5), wallMat);
+backWall.position.set(0, 25, -29.5);
+scene.add(backWall);
+
+/* ==================== THE DIVIDING WALL & NEXT-LEVEL PAD ==================== */
+let wallHeight = 2.5;
+const wallMesh = new THREE.Mesh(
+  new THREE.BoxGeometry(36, 2.5, 1.6),
+  new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.7 })
+);
+wallMesh.castShadow = true;
+wallMesh.receiveShadow = true;
+scene.add(wallMesh);
+
+// Glowing Victory Switch on Far Side (Z = 16)
+const goalPad = new THREE.Mesh(
+  new THREE.CylinderGeometry(2.4, 2.5, 0.35, 32),
+  new THREE.MeshStandardMaterial({ color: 0x10b981, emissive: 0x059669, emissiveIntensity: 0.6 })
+);
+goalPad.position.set(0, 0.18, 16);
+goalPad.receiveShadow = true;
+scene.add(goalPad);
+
+/* ==================== RETRO "BLOCK BUDDY" CHARACTER GENERATOR ==================== */
+function createAvatar(torsoColor = 0x2563eb, capColor = 0xb45309) {
+  const root = new THREE.Group();
+
+  // Head Canvas Texture (Sunglasses + Smile)
+  const faceCanvas = document.createElement('canvas');
+  faceCanvas.width = 128; faceCanvas.height = 128;
+  const fctx = faceCanvas.getContext('2d');
+  fctx.fillStyle = '#facc15';
+  fctx.fillRect(0,0,128,128);
+  // Sunglasses
+  fctx.fillStyle = '#1e293b';
+  fctx.fillRect(20, 36, 38, 22);
+  fctx.fillRect(70, 36, 38, 22);
+  fctx.fillRect(54, 42, 20, 6);
+  // Smile
+  fctx.lineWidth = 6;
+  fctx.strokeStyle = '#1e293b';
+  fctx.beginPath();
+  fctx.arc(64, 76, 28, 0.15 * Math.PI, 0.85 * Math.PI);
+  fctx.stroke();
+
+  const faceTex = new THREE.CanvasTexture(faceCanvas);
+  const headMat = [
+    new THREE.MeshStandardMaterial({ color: 0xfacc15 }),
+    new THREE.MeshStandardMaterial({ color: 0xfacc15 }),
+    new THREE.MeshStandardMaterial({ color: 0xfacc15 }),
+    new THREE.MeshStandardMaterial({ color: 0xfacc15 }),
+    new THREE.MeshStandardMaterial({ map: faceTex }),
+    new THREE.MeshStandardMaterial({ color: 0xfacc15 })
+  ];
+
+  // Head
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), headMat);
+  head.position.y = 1.65;
+  head.castShadow = true;
+  root.add(head);
+
+  // Cap
+  const cap = new THREE.Mesh(
+    new THREE.BoxGeometry(0.76, 0.22, 0.82),
+    new THREE.MeshStandardMaterial({ color: capColor })
+  );
+  cap.position.set(0, 2.05, 0.05);
+  root.add(cap);
+
+  // Torso
+  const torso = new THREE.Mesh(
+    new THREE.BoxGeometry(1.0, 1.0, 0.55),
+    new THREE.MeshStandardMaterial({ color: torsoColor })
+  );
+  torso.position.y = 0.95;
+  torso.castShadow = true;
+  root.add(torso);
+
+  // Arms
+  const armGeo = new THREE.BoxGeometry(0.32, 0.85, 0.32);
+  const armMat = new THREE.MeshStandardMaterial({ color: 0xfacc15 });
+
+  const leftArmPivot = new THREE.Group();
+  leftArmPivot.position.set(-0.7, 1.35, 0);
+  const leftArm = new THREE.Mesh(armGeo, armMat);
+  leftArm.position.y = -0.4;
+  leftArmPivot.add(leftArm);
+  root.add(leftArmPivot);
+
+  const rightArmPivot = new THREE.Group();
+  rightArmPivot.position.set(0.7, 1.35, 0);
+  const rightArm = new THREE.Mesh(armGeo, armMat);
+  rightArm.position.y = -0.4;
+  rightArmPivot.add(rightArm);
+  root.add(rightArmPivot);
+
+  // Legs
+  const legGeo = new THREE.BoxGeometry(0.38, 0.95, 0.38);
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x475569 });
+
+  const leftLegPivot = new THREE.Group();
+  leftLegPivot.position.set(-0.25, 0.5, 0);
+  const leftLeg = new THREE.Mesh(legGeo, legMat);
+  leftLeg.position.y = -0.45;
+  leftLegPivot.add(leftLeg);
+  root.add(leftLegPivot);
+
+  const rightLegPivot = new THREE.Group();
+  rightLegPivot.position.set(0.25, 0.5, 0);
+  const rightLeg = new THREE.Mesh(legGeo, legMat);
+  rightLeg.position.y = -0.45;
+  rightLegPivot.add(rightLeg);
+  root.add(rightLegPivot);
+
+  return { root, leftArmPivot, rightArmPivot, leftLegPivot, rightLegPivot };
+}
+
+/* ==================== PLAYER STATES ==================== */
+const p1Mesh = createAvatar(0x2563eb, 0xb45309);
+scene.add(p1Mesh.root);
+
+const p2Mesh = createAvatar(0x16a34a, 0x15803d);
+scene.add(p2Mesh.root);
+p2Mesh.root.visible = false;
+
+const players = [
+  {
+    id: 1,
+    avatar: p1Mesh,
+    pos: new THREE.Vector3(-2, 0, -18),
+    vel: new THREE.Vector3(),
+    yaw: 0,
+    isGrounded: true,
+    heldItem: null,
+    moveDir: new THREE.Vector2(),
+    stepCycle: 0
+  },
+  {
+    id: 2,
+    avatar: p2Mesh,
+    pos: new THREE.Vector3(2, 0, -18),
+    vel: new THREE.Vector3(),
+    yaw: 0,
+    isGrounded: true,
+    heldItem: null,
+    moveDir: new THREE.Vector2(),
+    stepCycle: 0
+  }
+];
+
+let isTwoPlayer = false;
+
+/* ==================== 150 PROCEDURAL LEVELS & ITEMS ==================== */
+let currentLevel = 1;
+const maxLevels = 150;
+let items = [];
+
+// Populate Level Selector
+const levelSelect = document.getElementById('level-select');
+for(let i = 1; i <= maxLevels; i++) {
+  const opt = document.createElement('option');
+  opt.value = i;
+  opt.textContent = `Level ${i}`;
+  levelSelect.appendChild(opt);
+}
+levelSelect.addEventListener('change', (e) => loadLevel(parseInt(e.target.value)));
+
+function loadLevel(lvl) {
+  currentLevel = lvl;
+  levelSelect.value = lvl;
+  document.getElementById('level-display').textContent = `LVL ${currentLevel} / ${maxLevels}`;
+  
+  // Height formula: doubled growth rate (0.32m per level)
+  wallHeight = 2.5 + (currentLevel - 1) * 0.32;
+  document.getElementById('height-display').textContent = `WALL: ${wallHeight.toFixed(1)}m`;
+
+  // Update Wall Mesh
+  wallMesh.geometry.dispose();
+  wallMesh.geometry = new THREE.BoxGeometry(36, wallHeight, 1.6);
+  wallMesh.position.set(0, wallHeight / 2, 0);
+
+  // Clear Prior Items
+  items.forEach(it => scene.remove(it.mesh));
+  items = [];
+
+  // Drop any carried items
+  players.forEach(p => { p.heldItem = null; });
+
+  // Reset Player Positions
+  players[0].pos.set(isTwoPlayer ? -3 : 0, 0, -18);
+  players[1].pos.set(3, 0, -18);
+  players.forEach(p => {
+    p.vel.set(0, 0, 0);
+    p.yaw = 0;
+  });
+
+  // Calculate Item Count (Guaranteed climb steps for extreme heights)
+  const itemCount = Math.min(65, 4 + Math.floor((currentLevel - 1) * 0.42));
+
+  // Item Types: Low step block (0.6m), Standard crate (1.2m), Tall Monolith (2.6m), Long Plank (4.0m)
+  for (let i = 0; i < itemCount; i++) {
+    let size, color, shapeType;
+    const roll = Math.random();
+
+    // Ensure at least 40% are easily-steppable low blocks
+    if (i < 3 || roll < 0.40) {
+      size = [1.2, 0.6, 1.2];
+      color = 0xf59e0b; // Gold stepping block
+      shapeType = 'step';
+    } else if (roll < 0.70) {
+      size = [1.3, 1.3, 1.3];
+      color = 0xd97706; // Wooden crate
+      shapeType = 'crate';
+    } else if (roll < 0.88) {
+      size = [1.1, 2.8, 1.1];
+      color = 0x64748b; // Concrete monolith
+      shapeType = 'pillar';
+    } else {
+      size = [3.6, 0.45, 1.2];
+      color = 0x854d0e; // Bridge plank
+      shapeType = 'plank';
+    }
+
+    const geo = new THREE.BoxGeometry(size[0], size[1], size[2]);
+    const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.7 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+
+    // Distribute randomly between Z: -15 and -3
+    const rx = (Math.random() - 0.5) * 26;
+    const rz = -15 + Math.random() * 11;
+    mesh.position.set(rx, size[1] / 2, rz);
+    scene.add(mesh);
+
+    items.push({
+      mesh,
+      size,
+      heldBy: null,
+      velY: 0
+    });
+  }
+}
+
+/* ==================== INPUT HANDLING ==================== */
+const keys = {};
+window.addEventListener('keydown', (e) => {
+  keys[e.code] = true;
+  initAudio();
+  if (e.code === 'KeyE') triggerAction(players[0], 'grab');
+  if (e.code === 'Space') triggerAction(players[0], 'jump');
+  if (e.code === 'KeyR') loadLevel(currentLevel);
+
+  if (isTwoPlayer) {
+    if (e.code === 'KeyM' || e.code === 'ShiftRight') triggerAction(players[1], 'grab');
+    if (e.code === 'Enter' || e.code === 'Numpad0') triggerAction(players[1], 'jump');
+  }
+});
+window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+// Touch / Virtual Joystick
+const joyBase = document.getElementById('joystick-base');
+const joyStick = document.getElementById('joystick-stick');
+let joyTouchId = null;
+let joyCenter = { x: 0, y: 0 };
+
+joyBase.addEventListener('touchstart', (e) => {
+  initAudio();
+  const touch = e.changedTouches[0];
+  joyTouchId = touch.identifier;
+  const rect = joyBase.getBoundingClientRect();
+  joyCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  updateJoystick(touch.clientX, touch.clientY);
+}, { passive: false });
+
+window.addEventListener('touchmove', (e) => {
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    if (e.changedTouches[i].identifier === joyTouchId) {
+      updateJoystick(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
+    }
+  }
+}, { passive: false });
+
+const resetJoy = () => {
+  joyTouchId = null;
+  joyStick.style.transform = `translate(0px, 0px)`;
+  players[0].moveDir.set(0, 0);
+};
+window.addEventListener('touchend', (e) => {
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    if (e.changedTouches[i].identifier === joyTouchId) resetJoy();
+  }
+});
+window.addEventListener('touchcancel', resetJoy);
+
+function updateJoystick(cx, cy) {
+  const dx = cx - joyCenter.x;
+  const dy = cy - joyCenter.y;
+  const dist = Math.hypot(dx, dy);
+  const maxR = 42;
+  const angle = Math.atan2(dy, dx);
+  const clampedDist = Math.min(dist, maxR);
+  
+  const nx = Math.cos(angle) * clampedDist;
+  const ny = Math.sin(angle) * clampedDist;
+  joyStick.style.transform = `translate(${nx}px, ${ny}px)`;
+
+  // Map to player 1 movement
+  players[0].moveDir.set(nx / maxR, -ny / maxR);
+}
+
+// Action Button Listeners
+document.getElementById('btn-jump').addEventListener('pointerdown', () => triggerAction(players[0], 'jump'));
+document.getElementById('btn-grab').addEventListener('pointerdown', () => triggerAction(players[0], 'grab'));
+document.getElementById('btn-reset').addEventListener('pointerdown', () => loadLevel(currentLevel));
+
+// Mode Switcher
+const modeBtn = document.getElementById('mode-toggle');
+modeBtn.addEventListener('click', () => {
+  isTwoPlayer = !isTwoPlayer;
+  modeBtn.textContent = isTwoPlayer ? 'Mode: 2 Players' : 'Mode: 1 Player';
+  players[1].avatar.root.visible = isTwoPlayer;
+  loadLevel(currentLevel);
+});
+
+function triggerAction(p, act) {
+  if (act === 'jump' && p.isGrounded) {
+    p.vel.y = 8.5;
+    p.isGrounded = false;
+    soundJump();
+  } else if (act === 'grab') {
+    if (p.heldItem) {
+      // Place / Drop
+      soundPlace();
+      p.heldItem.heldBy = null;
+      p.heldItem.mesh.position.y = Math.max(p.heldItem.size[1]/2, p.pos.y);
+      p.heldItem = null;
+    } else {
+      // Find nearest item in front
+      let nearest = null;
+      let minDist = 3.2;
+      for (const it of items) {
+        if (it.heldBy) continue;
+        const d = p.pos.distanceTo(it.mesh.position);
+        if (d < minDist) {
+          minDist = d;
+          nearest = it;
+        }
+      }
+      if (nearest) {
+        soundGrab();
+        p.heldItem = nearest;
+        nearest.heldBy = p;
+      }
+    }
+  }
+}
+
+/* ==================== AABB COLLISION & STEP PHYSICS ==================== */
+const GRAVITY = 18.0;
+
+function resolvePlayerPhysics(p, dt) {
+  // Input Movement
+  let mx = 0, mz = 0;
+  if (p.id === 1) {
+    if (keys['KeyW']) mz += 1;
+    if 
